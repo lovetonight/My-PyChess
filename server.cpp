@@ -38,6 +38,9 @@ std::vector<PlayerSockInfo> playerInfos;
 std::queue<std::string> logQ;
 std::set<int> busyPpl;
 std::vector<std::pair<int, int>> players;
+std::vector<std::pair<int, int>> findMatchPlayers;
+std::vector<std::pair<int, int>> reMatchPlayers;
+std::vector<std::string> loggedUsernames;
 bool end = false;
 bool lock = false;
 int total = 0;
@@ -198,9 +201,14 @@ void log(const std::string &data, int key = -1, bool adminput = false)
         logQ.push("");
     }
 }
+bool isUsernameLoggedIn(std::string &username)
+{
+    return std::find(loggedUsernames.begin(), loggedUsernames.end(), username) != loggedUsernames.end();
+}
 
 int getKeyFromSock(int sock)
 {
+
     for (const auto &playerInfo : playerInfos)
     {
         if (playerInfo.sock == sock)
@@ -217,6 +225,33 @@ int getKeyFromSock(int sock)
 //         file << player.username << " " << player.id << " " << player.score << "\n";
 //     }
 // }
+std::string getUsernameFromSock(int sock)
+{
+    std::string filename = "username.txt"; // Thay đổi tên file của bạn
+    std::vector<PlayerInfo> players = readPlayersFromFile(filename);
+    int id = getKeyFromSock(sock);
+    for (auto &player : players)
+    {
+        if (player.id == id)
+        {
+            return player.username;
+        }
+    }
+    return "";
+}
+int getEloByID(int id)
+{
+    std::string filename = "username.txt"; // Thay đổi tên file của bạn
+    std::vector<PlayerInfo> players = readPlayersFromFile(filename);
+    for (auto &player : players)
+    {
+        if (player.id == id)
+        {
+            return player.score;
+        }
+    }
+    return 0;
+}
 void score(int win, int lose)
 {
     int id_win, id_lose;
@@ -262,7 +297,7 @@ std::string read(int sock, int timeout = -1)
     {
         return "quit";
     }
-    std::cout <<sock<<": "<<buffer << std::endl;
+    std::cout << sock << ": " << buffer << std::endl;
     return std::string(buffer);
 }
 
@@ -322,7 +357,7 @@ void rmBusy(std::initializer_list<int> keys)
     }
 }
 
-bool game(int sock1, int sock2)
+int game(int sock1, int sock2)
 {
     while (true)
     {
@@ -331,18 +366,28 @@ bool game(int sock1, int sock2)
         write(sock2, msg);
         if (msg.compare("quit") == 0)
         {
+            std::string tmp_username = getUsernameFromSock(sock1);
+            loggedUsernames.erase(std::remove(loggedUsernames.begin(), loggedUsernames.end(), tmp_username), loggedUsernames.end());
             return true;
         }
         else if (msg.compare("draw") == 0 || msg.compare("resign") == 0 || msg.compare("end") == 0 || msg.compare("lose") == 0 || msg.compare("win") == 0)
         {
-            if (msg.compare("resign") == 0 )
-                score(sock2, sock1); 
-            else if (msg.compare("lose") == 0 )
+            if (msg.compare("resign") == 0)
+                score(sock2, sock1);
+            else if (msg.compare("lose") == 0)
                 score(sock1, sock2);
-            
 
-            // if (msg.compare("win") == 0)
+            // if (msg.compare("win") == 0)rematch
             //     score(sock2, sock1);
+            return false;
+        }
+        else if (msg.compare("acc") == 0)
+        {
+            // Xu li giong findmatch
+        }
+        else if (msg.compare("dec") == 0)
+        {
+            write(sock2, "msg");
             return false;
         }
     }
@@ -350,6 +395,7 @@ bool game(int sock1, int sock2)
 
 void player(int sock, int key)
 {
+    bool rematch = false;
     while (true)
     {
         std::string msg = read(sock, 3);
@@ -357,6 +403,9 @@ void player(int sock, int key)
 
         if (msg.substr(0, 4).compare("quit") == 0)
         {
+            std::string tmp_username = getUsernameFromSock(sock);
+            loggedUsernames.erase(std::remove(loggedUsernames.begin(), loggedUsernames.end(), tmp_username), loggedUsernames.end());
+
             return;
         }
         else if (msg.substr(0, 5).compare("pStat") == 0)
@@ -371,13 +420,16 @@ void player(int sock, int key)
                 {
                     if (player.second != key)
                     {
+                        int elo = getEloByID(player.second);
+
+                        // Them elo tai day
                         if (latestbusy.find(player.second) != latestbusy.end())
                         {
-                            write(sock, std::to_string(player.second) + "b");
+                            write(sock, std::to_string(player.second) + "b" +std::to_string(elo));
                         }
                         else
                         {
-                            write(sock, std::to_string(player.second) + "a");
+                            write(sock, std::to_string(player.second) + "a"+ std::to_string(elo));
                         }
                     }
                 }
@@ -444,6 +496,67 @@ void player(int sock, int key)
                 rmBusy({key});
             }
         }
+        else if (msg.substr(0, 4).compare("find") == 0)
+        {
+            std::vector<std::pair<int, int>> findplayers;
+            int id_win = getKeyFromSock(sock);
+            findMatchPlayers.push_back({sock, id_win});
+            int elo = getEloByID(id_win);
+
+            // findMatchPlayers;
+            for (auto &player : findMatchPlayers)
+            {
+                int o_elo = getEloByID(player.second);
+                if (o_elo >= elo - 100 && o_elo < elo + 100)
+                {
+                    findplayers.push_back(player);
+                }
+            }
+
+            std::cout << findplayers.size() << std::endl;
+            // Tim nguoi co cung elo
+
+            if (findplayers.size() == 1)
+            {
+                mkBusy({id_win, sock});
+                write(sock, "Wait");
+            }
+            else
+            {
+                // TODO: Tim 1 nguoi k ban de match
+                int current_player_index = -1;
+                int oSock = findplayers[0].first;
+                write(oSock, "xr" + std::to_string(key));
+                write(sock, "msgOk");
+                std::string newMsg = read(sock, 3);
+                newMsg = remove_space(newMsg);
+                if (newMsg.compare("ready") == 0)
+                {
+                    findMatchPlayers.pop_back();
+                    findMatchPlayers.pop_back();
+                    std::cout << "number of players" << findMatchPlayers.size() << std::endl;
+                    log("Player " + std::to_string(key) + " is in a game as white");
+                    if (game(sock, oSock))
+                    {
+                        return;
+                    }
+                    else
+                    {
+                        log("Player " + std::to_string(key) + " finished the game");
+                    }
+                }
+                else if (newMsg.compare("quit") == 0)
+                {
+                    write(oSock, "quit");
+                    return;
+                }
+                rmBusy({key});
+            }
+        }
+        // Tim 1 nguoi trong danh sach
+        // Khong co thi doi trong 5p
+        // Neu co 1 nguoi cung dang doi =>
+
         else if (msg.substr(0, 4).compare("gmNo") == 0)
         {
             log("Rejected Player" + msg.substr(4) + " request", key);
@@ -698,15 +811,17 @@ void initPlayerThread(int sock)
         log("Error reading password from client.");
         return;
     }
-    // while (!checkusername(username, password))
-    // {
-    //     write(sock, "notOK");
-    //     username = read(sock, 3);
-    //     password = read(sock, 3);
-    // }
+    while (!checkusername(username, password) || isUsernameLoggedIn(username))
+    {
+        write(sock, "notOK");
+        username = read(sock, 3);
+        username = remove_space(username);
+        password = read(sock, 3);
+        password = remove_space(password);
+    }
 
     write(sock, "OK");
-
+    loggedUsernames.push_back(username);
     if (read(sock, 3).compare("PyChess") == 0)
     {
         log("Client sent invalid header, closing connection.");
@@ -820,3 +935,5 @@ int main()
     close(mainSock);
     return 0;
 }
+
+// g++ server.cpp -o server && ./server

@@ -254,12 +254,17 @@ class ONLINE:
 
     ACTIVE = small.render("ACTIVE", True, GREEN)
     BUSY = small.render("BUSY", True, RED)
-    REQ = small.render("Send Request", True, WHITE)
+    REQ = small.render("Send Req", True, WHITE)
     YOUARE = medium.render("You Are", True, WHITE)
     
     ERRCONN = vsmall.render("Unable to connect to that player..", True, WHITE)
 
     REFRESH = pygame.image.load(os.path.join("res", "img", "refresh.png"))
+    FIND_MATCH = pygame.image.load(os.path.join("res", "img", "findmatch.png"))
+    
+    WAITING1 =(
+        vsmall.render("Please wait for the other player", True, WHITE),
+    )
 
     REQUEST1 = (
         vsmall.render("Please wait for the other player to", True, WHITE),
